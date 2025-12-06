@@ -1,0 +1,33 @@
+---
+- name: Настройка веб-серверов
+  hosts: web
+  become: yes
+  roles:
+    - nginx_web
+
+- name: Настройка Zabbix-сервера
+  hosts: zabbix
+  become: yes
+  roles:
+    - zabbix_server
+
+- name: Установка Zabbix-agent на web, es, kibana
+  hosts: "web:elasticsearch:kibana"
+  become: yes
+  roles:
+    - zabbix_agent
+
+- name: Настройка Elasticsearch-сервера
+  hosts: elasticsearch
+  roles:
+    - elasticsearch
+
+- name: Настройка Kibana-сервера
+  hosts: kibana
+  roles:
+    - kibana
+
+- name: Настройка Filebeat на Web-серверах
+  hosts: web
+  roles:
+    - filebeat

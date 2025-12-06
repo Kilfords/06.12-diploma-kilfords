@@ -1,0 +1,16 @@
+{
+  "ExpandedNodes": [
+    "",
+    "\\ansible",
+    "\\ansible\\roles",
+    "\\ansible\\roles\\nginx_web",
+    "\\ansible\\roles\\nginx_web\\tasks",
+    "\\ansible\\roles\\zabbix_agent",
+    "\\ansible\\roles\\zabbix_agent\\tasks",
+    "\\ansible\\roles\\zabbix_server",
+    "\\ansible\\roles\\zabbix_server\\defaults",
+    "\\ansible\\roles\\zabbix_server\\tasks"
+  ],
+  "SelectedNode": "\\ansible\\roles\\zabbix_server\\tasks",
+  "PreviewInSolutionExplorer": false
+}

@@ -1,0 +1,58 @@
+---
+- name: Обновить apt-кэш и поставить базовые пакеты
+  become: yes
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+    name:
+      - wget
+      - curl
+      - gnupg
+      - software-properties-common
+    state: present
+
+# === Репозиторий Zabbix 7.0 LTS, как и для сервера ===
+- name: Определить имя пакета репозитория Zabbix 7 для текущей Ubuntu
+  set_fact:
+    zabbix_repo_deb: "zabbix-release_latest_7.0+ubuntu{{ ansible_distribution_version }}_all.deb"
+
+- name: Скачать пакет репозитория Zabbix 7.0
+  become: yes
+  get_url:
+    url: "https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/{{ zabbix_repo_deb }}"
+    dest: "/tmp/{{ zabbix_repo_deb }}"
+    mode: '0644'
+
+- name: Установить репозиторий Zabbix
+  become: yes
+  apt:
+    deb: "/tmp/{{ zabbix_repo_deb }}"
+
+- name: Обновить apt после добавления репозитория Zabbix
+  become: yes
+  apt:
+    update_cache: yes
+
+- name: Установить Zabbix agent
+  become: yes
+  apt:
+    name: zabbix-agent
+    state: present
+
+# === Настройка агента ===
+- name: Настроить Zabbix agent (Server, ServerActive, Hostname)
+  become: yes
+  blockinfile:
+    path: /etc/zabbix/zabbix_agentd.conf
+    insertafter: EOF
+    block: |
+      Server={{ zabbix_server_host }}
+      ServerActive={{ zabbix_server_host }}
+      Hostname={{ inventory_hostname }}
+
+- name: Включить и перезапустить Zabbix agent
+  become: yes
+  systemd:
+    name: zabbix-agent
+    enabled: yes
+    state: restarted

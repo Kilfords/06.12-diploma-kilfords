@@ -1,0 +1,98 @@
+---
+- name: Установить базовые пакеты
+  become: yes
+  apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg
+    state: present
+    update_cache: yes
+
+# Чистим старые битые репы Elastic (artifacts.elastic.co и т.п.)
+- name: Удалить старые APT-репозитории Elastic
+  become: yes
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/apt/sources.list.d/elastic-7.x.list
+    - /etc/apt/sources.list.d/elastic-8.x.list
+    - /etc/apt/sources.list.d/elasticsearch.list
+    - /etc/apt/sources.list.d/elastic.list
+
+# На всякий случай — прибираем упоминания artifacts.elastic.co
+- name: Удалить строки с artifacts.elastic.co из sources.list
+  become: yes
+  replace:
+    path: /etc/apt/sources.list
+    regexp: '.*artifacts\.elastic\.co.*'
+    replace: ''
+  ignore_errors: yes
+
+# Подключаем зеркало Elastic от Яндекса
+- name: Подключить репозиторий Elastic 8.x (mirror.yandex.ru)
+  become: yes
+  copy:
+    dest: /etc/apt/sources.list.d/elastic-8.x.list
+    content: |
+      deb [trusted=yes] https://mirror.yandex.ru/mirrors/elastic/8/ stable main
+
+# Обновляем кеш
+- name: Обновить apt-кэш
+  become: yes
+  apt:
+    update_cache: yes
+
+# Ставим Elasticsearch
+- name: Установить Elasticsearch
+  become: yes
+  apt:
+    name: elasticsearch
+    state: present
+
+- name: Удалить cluster.initial_master_nodes — запрещён при discovery.type=single-node
+  become: yes
+  replace:
+    path: /etc/elasticsearch/elasticsearch.yml
+    regexp: '^cluster\.initial_master_nodes:.*'
+    replace: '# removed by Ansible: single-node mode'
+  ignore_errors: yes
+
+- name: Удалить дубли xpack.security.enabled
+  become: yes
+  replace:
+    path: /etc/elasticsearch/elasticsearch.yml
+    regexp: '^xpack\.security\.enabled:.*'
+    replace: '# removed duplicate xpack.security.enabled'
+  ignore_errors: yes
+
+- name: Настроить elasticsearch.yml
+  become: yes
+  blockinfile:
+    path: /etc/elasticsearch/elasticsearch.yml
+    insertafter: EOF
+    block: |
+
+      network.host: 0.0.0.0
+      http.port: 9200
+      discovery.type: single-node
+      xpack.security.enabled: false
+
+# Elasticsearch требует vm.max_map_count >= 262144
+- name: Установить vm.max_map_count
+  become: yes
+  sysctl:
+    name: vm.max_map_count
+    value: 262144
+    state: present
+    reload: yes
+
+# Включаем и запускаем сервис
+- name: Включить и запустить Elasticsearch
+  become: yes
+  systemd:
+    name: elasticsearch
+    enabled: yes
+    state: restarted

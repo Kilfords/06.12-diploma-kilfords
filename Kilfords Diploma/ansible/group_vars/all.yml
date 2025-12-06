@@ -1,0 +1,7 @@
+---
+zabbix_server_host: "zabbix.ru-central1.internal"
+
+elk_version: "8.x"
+elasticsearch_host: "elasticsearch.ru-central1.internal"
+
+kibana_host: "kibana.ru-central1.internal"

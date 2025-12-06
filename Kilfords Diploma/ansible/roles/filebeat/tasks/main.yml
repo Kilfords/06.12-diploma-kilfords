@@ -1,0 +1,70 @@
+---
+- name: Установить базовые пакеты для Filebeat
+  become: yes
+  apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg
+    state: present
+    update_cache: yes
+
+# Используем то же зеркало Elastic, что и для Elasticsearch
+- name: Подключить репозиторий Elastic 8.x (mirror.yandex.ru) для Filebeat
+  become: yes
+  copy:
+    dest: /etc/apt/sources.list.d/elastic-8.x.list
+    content: |
+      deb [trusted=yes] https://mirror.yandex.ru/mirrors/elastic/8/ stable main
+
+- name: Обновить apt-кэш
+  become: yes
+  apt:
+    update_cache: yes
+
+- name: Установить Filebeat
+  become: yes
+  apt:
+    name: filebeat
+    state: present
+
+# Полностью заменяем filebeat.yml на наш минимальный рабочий
+- name: Задать конфигурацию Filebeat
+  become: yes
+  copy:
+    dest: /etc/filebeat/filebeat.yml
+    mode: '0644'
+    content: |
+      filebeat.inputs:
+        - type: filestream
+          id: nginx-access
+          enabled: true
+          paths:
+            - /var/log/nginx/access.log
+
+        - type: filestream
+          id: nginx-error
+          enabled: true
+          paths:
+            - /var/log/nginx/error.log
+
+      # отключим ILM, чтобы индексы создавались напрямую
+      setup.ilm.enabled: false
+
+      output.elasticsearch:
+        hosts: ["http://{{ elasticsearch_host }}:9200"]
+
+- name: Проверить конфигурацию Filebeat
+  become: yes
+  command: filebeat test config -c /etc/filebeat/filebeat.yml
+  register: filebeat_config_test
+  failed_when: filebeat_config_test.rc != 0
+  changed_when: false
+
+- name: Включить и запустить Filebeat
+  become: yes
+  systemd:
+    name: filebeat
+    enabled: yes
+    state: restarted

@@ -1,0 +1,124 @@
+---
+- name: Установить базовые пакеты и MariaDB
+  become: yes
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+    name:
+      - wget
+      - curl
+      - gnupg
+      - software-properties-common
+      - mariadb-server
+    state: present
+
+- name: Убедиться, что MariaDB запущен
+  become: yes
+  systemd:
+    name: mariadb
+    state: started
+    enabled: yes
+
+# Репозиторий Zabbix 7.0 LTS
+- name: Определить имя пакета репозитория Zabbix 7 для текущей Ubuntu
+  set_fact:
+    zabbix_repo_deb: "zabbix-release_latest_7.0+ubuntu{{ ansible_distribution_version }}_all.deb"
+
+- name: Скачать пакет репозитория Zabbix 7.0
+  become: yes
+  get_url:
+    url: "https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/{{ zabbix_repo_deb }}"
+    dest: "/tmp/{{ zabbix_repo_deb }}"
+    mode: '0644'
+
+- name: Установить репозиторий Zabbix
+  become: yes
+  apt:
+    deb: "/tmp/{{ zabbix_repo_deb }}"
+
+- name: Обновить apt после добавления репозитория Zabbix
+  become: yes
+  apt:
+    update_cache: yes
+
+- name: Установить Zabbix server, frontend (Apache) и agent
+  become: yes
+  apt:
+    name:
+      - zabbix-server-mysql
+      - zabbix-frontend-php
+      - zabbix-apache-conf
+      - zabbix-sql-scripts
+      - zabbix-agent
+    state: present
+
+# Создать БД и пользователя (без DROP)
+- name: Создать БД и пользователя Zabbix, если ещё нет
+  become: yes
+  shell: |
+    mysql -uroot <<MYSQL
+    CREATE DATABASE IF NOT EXISTS {{ zabbix_db_name }} CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
+    CREATE USER IF NOT EXISTS '{{ zabbix_db_user }}'@'localhost' IDENTIFIED BY '{{ zabbix_db_pass }}';
+    GRANT ALL PRIVILEGES ON {{ zabbix_db_name }}.* TO '{{ zabbix_db_user }}'@'localhost';
+    SET GLOBAL log_bin_trust_function_creators = 1;
+    FLUSH PRIVILEGES;
+    MYSQL
+  args:
+    executable: /bin/bash
+
+# Импорт схемы Zabbix (один раз, если ещё не импортирована)
+- name: Импортировать начальную схему Zabbix (один раз)
+  become: yes
+  shell: |
+    set -o errexit
+    set -o pipefail
+    zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | \
+      mysql --default-character-set=utf8mb4 -u{{ zabbix_db_user }} -p'{{ zabbix_db_pass }}' {{ zabbix_db_name }}
+    touch /root/.zabbix_schema_imported
+  args:
+    executable: /bin/bash
+    creates: /root/.zabbix_schema_imported
+
+- name: Отключить log_bin_trust_function_creators обратно в 0
+  become: yes
+  shell: |
+    mysql -uroot -e "SET GLOBAL log_bin_trust_function_creators = 0;"
+  args:
+    executable: /bin/bash
+
+# Настройка Zabbix server
+- name: Настроить параметры БД в zabbix_server.conf
+  become: yes
+  lineinfile:
+    path: /etc/zabbix/zabbix_server.conf
+    regexp: '^#?{{ item.key }}='
+    line: "{{ item.key }}={{ item.value }}"
+    backup: yes
+  loop:
+    - { key: 'DBHost',     value: 'localhost' }
+    - { key: 'DBName',     value: '{{ zabbix_db_name }}' }
+    - { key: 'DBUser',     value: '{{ zabbix_db_user }}' }
+    - { key: 'DBPassword', value: '{{ zabbix_db_pass }}' }
+
+# Agent на самом сервере Zabbix
+- name: Настроить Zabbix agent на сервере Zabbix
+  become: yes
+  blockinfile:
+    path: /etc/zabbix/zabbix_agentd.conf
+    insertafter: EOF
+    block: |
+      Server=127.0.0.1
+      ServerActive=127.0.0.1
+      Hostname={{ zabbix_server_hostname | default('zabbix.ru-central1.internal') }}
+
+# Запуск сервисов
+- name: Включить и запустить Zabbix server, Zabbix agent и Apache
+  become: yes
+  systemd:
+    name: "{{ item }}"
+    enabled: yes
+    state: started
+  loop:
+    - zabbix-server
+    - zabbix-agent
+    - apache2

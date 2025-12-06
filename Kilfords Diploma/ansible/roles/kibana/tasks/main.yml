@@ -1,0 +1,53 @@
+---
+- name: Создать каталог для временных файлов Kibana
+  become: yes
+  file:
+    path: /tmp/kibana
+    state: directory
+
+- name: Скачать deb-пакет Kibana 8.19.8 с mirror.yandex.ru
+  become: yes
+  get_url:
+    url: "https://mirror.yandex.ru/mirrors/elastic/8/pool/main/k/kibana/kibana-8.19.8-amd64.deb"
+    dest: "/tmp/kibana/kibana-8.19.8-amd64.deb"
+    mode: '0644'
+
+- name: Установить Kibana из deb-пакета
+  become: yes
+  apt:
+    deb: "/tmp/kibana/kibana-8.19.8-amd64.deb"
+    state: present
+
+# На всякий случай прибьём старые строки, если уже ковыряли руками
+- name: Удалить старые elasticsearch.hosts из kibana.yml
+  become: yes
+  replace:
+    path: /etc/kibana/kibana.yml
+    regexp: '^elasticsearch\.hosts:.*'
+    replace: '# removed by Ansible'
+  ignore_errors: yes
+
+- name: Удалить старый server.host из kibana.yml
+  become: yes
+  replace:
+    path: /etc/kibana/kibana.yml
+    regexp: '^server\.host:.*'
+    replace: '# removed by Ansible'
+  ignore_errors: yes
+
+- name: Настроить kibana.yml
+  become: yes
+  blockinfile:
+    path: /etc/kibana/kibana.yml
+    insertafter: EOF
+    block: |
+      server.host: "0.0.0.0"
+      server.port: 5601
+      elasticsearch.hosts: ["http://{{ elasticsearch_host }}:9200"]
+
+- name: Включить и запустить Kibana
+  become: yes
+  systemd:
+    name: kibana
+    enabled: yes
+    state: restarted

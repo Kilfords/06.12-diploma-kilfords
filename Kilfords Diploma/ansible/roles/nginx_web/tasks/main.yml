@@ -1,0 +1,32 @@
+---
+- name: Обновить кеш apt
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Установить nginx
+  apt:
+    name: nginx
+    state: present
+
+- name: Создать корневой каталог сайта (на всякий)
+  file:
+    path: /var/www/html
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "0755"
+
+- name: Развернуть статический сайт
+  copy:
+    src: site/
+    dest: /var/www/html/
+    owner: www-data
+    group: www-data
+    mode: "0644"
+
+- name: Включить и запустить nginx
+  service:
+    name: nginx
+    state: started
+    enabled: yes
